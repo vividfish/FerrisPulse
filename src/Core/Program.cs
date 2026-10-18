@@ -7,7 +7,7 @@
 //   2. 声明 Windows 硬件高 DPI 感知 (Per-Monitor DPI Aware)
 //   3. 系统全局命名互斥体 (Mutex) 单实例保护，多开时发送系统广播唤醒已有实例并安全退出
 //   4. 解析 --autostart 命令行参数与未捕获异常统一兜底弹窗
-// 依赖关系: NativeMethods.cs, StartupManager.cs, MainForm.cs
+// 依赖关系: NativeMethods.cs, StartupManager.cs, MainForm.cs, AppleProximityWatcher.cs
 //
 // ⚠️ AI 维护准则 (AI MAINTENANCE DIRECTIVE - DO NOT REMOVE) ⚠️:
 // 1. [契约同步更新]: 任何 AI Agent 在新增启动流程或参数时，【必须】同步更新上方说明。
@@ -116,15 +116,17 @@ namespace RazerBatteryTray
                 return;
             }
 
-            // 7. 启动主窗体消息循环
+            // 7. 启动主窗体消息循环。Beats 电量来自近距广播，先在界面线程上打开监听。
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             try
             {
+                AppleProximityWatcher.EnsureStarted();
                 Application.Run(new MainForm(isAutoStart));
             }
             finally
             {
+                try { AppleProximityWatcher.Stop(); } catch { }
                 if (appMutex != null)
                 {
                     try { appMutex.ReleaseMutex(); } catch { }

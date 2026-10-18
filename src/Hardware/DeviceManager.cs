@@ -612,6 +612,7 @@ namespace RazerBatteryTray
                     }
 
                     int batt = -1;
+                    bool appleCharging = false;
                     string friendlyName = null;
                     bool connected = false;
                     if (!string.IsNullOrEmpty(cfg.HardwareFingerprint) && cfg.HardwareFingerprint.StartsWith("VGN:", StringComparison.OrdinalIgnoreCase))
@@ -677,6 +678,7 @@ namespace RazerBatteryTray
                     else if (!string.IsNullOrEmpty(cfg.HardwareFingerprint))
                     {
                         connected = BluetoothDeviceHelper.QueryByMac(cfg.HardwareFingerprint, cfg.OriginalName ?? cfg.CustomName, out batt, out friendlyName);
+                        appleCharging = AppleProximityAdvertisement.GetCharging(cfg.HardwareFingerprint);
                     }
 
                     var devInfo = new MouseBatteryInfo();
@@ -755,6 +757,7 @@ namespace RazerBatteryTray
                         {
                             UpdateCustomDeviceBattery(cfg.DeviceId, batt, DateTime.Now);
                         }
+                        if (appleCharging) devInfo.IsCharging = true;
                     }
                     else
                     {

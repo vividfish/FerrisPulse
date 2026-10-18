@@ -2,8 +2,8 @@
 // 模块名称: BluetoothDeviceHelper.cs
 // 所属区域: Hardware (硬件驱动层)
 // 核心职责:
-//   Windows 原生低功耗蓝牙 (BLE Battery Service GATT 0x180F) 设备电量解析
-// 依赖关系: NativeMethods.cs, MouseBatteryInfo.cs
+//   读取 Windows 电量属性；Beats / AirPods 没有该属性时，改听 Apple 近距广播
+// 依赖关系: NativeMethods.cs, MouseBatteryInfo.cs, AppleProximityAdvertisement.cs
 //
 // ⚠️ AI 维护准则 (AI MAINTENANCE DIRECTIVE - DO NOT REMOVE) ⚠️:
 // 1. [契约同步更新]: 任何 AI Agent 在修改本文件逻辑、协议解析或签名时，【必须】同步更新上方说明。
@@ -117,6 +117,8 @@ namespace RazerBatteryTray
             fmtid = new Guid("104ea319-6ee2-4701-bd47-8ddbf425bbe5"),
             pid = 7
         };
+
+        static int appleAdvWaited;
 
         public static DEVPROPKEY DEVPKEY_Device_FriendlyName = new DEVPROPKEY
         {
@@ -402,6 +404,7 @@ namespace RazerBatteryTray
             // 无论当前是否已连接，均深入查询 Windows SetupAPI 驱动属性缓存，使离线电量与 Windows 蓝牙设置实时保持一致
             long latestTime = 0;
             int bestBattery = -1;
+            ushort appleModel = 0;
 
             string[] enumerators = new string[] { "BTHLE", "BTHENUM" };
             foreach (var en in enumerators)
@@ -466,6 +469,12 @@ namespace RazerBatteryTray
                         }
 
                         bool matchesMac = (instId.IndexOf(mac, StringComparison.OrdinalIgnoreCase) >= 0);
+                        if (matchesMac && appleModel == 0 &&
+                            (instId.IndexOf("PID&2009", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             instId.IndexOf("PID_2009", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            appleModel = 0x2009;
+                        }
                         bool matchesName = false;
                         string searchName = !string.IsNullOrEmpty(friendlyName) ? friendlyName : hintName;
                         if (!string.IsNullOrEmpty(searchName) && !string.IsNullOrEmpty(nodeFn))
@@ -516,6 +525,31 @@ namespace RazerBatteryTray
                 friendlyName = hintName;
             }
 
+            if (bestBattery < 0)
+            {
+                AppleProximityWatcher.EnsureStarted();
+                int advPercent;
+                bool advCharging;
+                bool appleCandidate = appleModel != 0 ||
+                    AppleProximityAdvertisement.LooksLikeAppleAudio(hintName) ||
+                    AppleProximityAdvertisement.LooksLikeAppleAudio(friendlyName);
+                bool advFound = AppleProximityAdvertisement.TryGetBattery(hintName, friendlyName, appleModel, out advPercent, out advCharging);
+                if (!advFound && appleCandidate && System.Threading.Interlocked.Exchange(ref appleAdvWaited, 1) == 0)
+                {
+                    System.Threading.Thread.Sleep(1500);
+                    advFound = AppleProximityAdvertisement.TryGetBattery(hintName, friendlyName, appleModel, out advPercent, out advCharging);
+                }
+                if (advFound)
+                {
+                    bestBattery = advPercent;
+                    AppleProximityAdvertisement.RememberCharging(mac, advCharging);
+                }
+                else if (appleCandidate)
+                {
+                    AppleProximityAdvertisement.RememberCharging(mac, false);
+                }
+            }
+
             if (bestBattery >= 0)
             {
                 battery = bestBattery;
@@ -564,7 +598,7 @@ namespace RazerBatteryTray
                     cat = DeviceCategory.Gamepad;
                 else if (lower.Contains("buds") || lower.Contains("airpod") || lower.Contains("freebuds") || lower.Contains("earbud") || lower.Contains("入耳"))
                     cat = DeviceCategory.Earbuds;
-                else if (lower.Contains("head") || lower.Contains("ear") || lower.Contains("audio") || lower.Contains("free") || lower.Contains("耳机") || lower.Contains("头戴"))
+                else if (lower.Contains("beats") || lower.Contains("head") || lower.Contains("ear") || lower.Contains("audio") || lower.Contains("free") || lower.Contains("耳机") || lower.Contains("头戴"))
                     cat = DeviceCategory.Headset;
                 else if (lower.Contains("mouse") || lower.Contains("鼠标"))
                     cat = DeviceCategory.Mouse;
