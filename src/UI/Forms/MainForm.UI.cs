@@ -30,6 +30,7 @@ namespace RazerBatteryTray
             this.BackColor = Color.FromArgb(18, 19, 23);
             this.ForeColor = Color.White;
             this.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
+            this.AutoScaleMode = AutoScaleMode.None;
             this.ShowInTaskbar = true;
             this.DoubleBuffered = true;
             this.LocationChanged += (s, e) => {
@@ -846,70 +847,54 @@ namespace RazerBatteryTray
             lblSettingsTitle.AutoSize = true;
             cardSettings.Controls.Add(lblSettingsTitle);
 
-            int row1Y = (int)(66 * dpiScale);
-
             lblIntervalTitle = new Label();
             lblIntervalTitle.Text = "自动刷新频率";
             lblIntervalTitle.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
             lblIntervalTitle.ForeColor = Color.FromArgb(160, 168, 185);
             lblIntervalTitle.BackColor = Color.Transparent;
-            lblIntervalTitle.Location = new Point(cPad, (int)(40 * dpiScale));
-            lblIntervalTitle.AutoSize = true;
+            lblIntervalTitle.AutoSize = false;
+            lblIntervalTitle.TextAlign = ContentAlignment.MiddleLeft;
+            lblIntervalTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             cardSettings.Controls.Add(lblIntervalTitle);
 
-            int seg2Gap = (int)(8 * dpiScale);
-            int seg2W = (secW - (seg2Gap * 3)) / 4;
-            int seg1X = cPad;
             Font intervalFont = new Font("Microsoft YaHei UI", 8.5F, FontStyle.Regular, GraphicsUnit.Point);
 
             btnInt30s = new ModernSegmentButton();
             btnInt30s.Text = "30 秒";
             btnInt30s.Font = intervalFont;
-            btnInt30s.Location = new Point(seg1X, row1Y);
-            btnInt30s.Size = new Size(seg2W, segH);
+            btnInt30s.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             btnInt30s.Click += (s, e) => SetInterval(30000, false);
             cardSettings.Controls.Add(btnInt30s);
 
             btnInt1m = new ModernSegmentButton();
             btnInt1m.Text = "1 分钟";
             btnInt1m.Font = intervalFont;
-            btnInt1m.Location = new Point(seg1X + (seg2W + seg2Gap), row1Y);
-            btnInt1m.Size = new Size(seg2W, segH);
+            btnInt1m.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             btnInt1m.Click += (s, e) => SetInterval(60000, false);
             cardSettings.Controls.Add(btnInt1m);
 
             btnInt5m = new ModernSegmentButton();
             btnInt5m.Text = "5 分钟";
             btnInt5m.Font = intervalFont;
-            btnInt5m.Location = new Point(seg1X + (seg2W + seg2Gap) * 2, row1Y);
-            btnInt5m.Size = new Size(seg2W, segH);
+            btnInt5m.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             btnInt5m.Click += (s, e) => SetInterval(300000, false);
             cardSettings.Controls.Add(btnInt5m);
 
             btnInt10m = new ModernSegmentButton();
             btnInt10m.Text = "10 分钟";
             btnInt10m.Font = intervalFont;
-            btnInt10m.Location = new Point(seg1X + (seg2W + seg2Gap) * 3, row1Y);
-            btnInt10m.Size = new Size(seg2W, segH);
+            btnInt10m.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             btnInt10m.Click += (s, e) => SetInterval(600000, false);
             cardSettings.Controls.Add(btnInt10m);
 
             divSettings = new SubtleDivider();
-            divSettings.Location = new Point(cPad, (int)(104 * dpiScale));
-            divSettings.Size = new Size(secW, (int)(8 * dpiScale));
+            divSettings.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             cardSettings.Controls.Add(divSettings);
-
-            int chkY1 = (int)(118 * dpiScale);
-            int chkY2 = (int)(146 * dpiScale);
-            int chkGap = (int)(14 * dpiScale);
-            int chkW = (secW - chkGap) / 2;
-            int chkH = (int)(24 * dpiScale);
 
             chkAutoStart = new ModernCheckBox();
             chkAutoStart.Text = "开机自动启动";
             chkAutoStart.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-            chkAutoStart.Location = new Point(cPad, chkY1);
-            chkAutoStart.Size = new Size(chkW, chkH);
+            chkAutoStart.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             chkAutoStart.CheckedChanged += (s, e) => {
                 if (isUpdatingUI) return;
                 SetAutoStart(chkAutoStart.Checked);
@@ -919,8 +904,7 @@ namespace RazerBatteryTray
             chkAutoStartShowUI = new ModernCheckBox();
             chkAutoStartShowUI.Text = "开机弹出主窗口";
             chkAutoStartShowUI.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-            chkAutoStartShowUI.Location = new Point(cPad + chkW + chkGap, chkY1);
-            chkAutoStartShowUI.Size = new Size(chkW, chkH);
+            chkAutoStartShowUI.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             chkAutoStartShowUI.CheckedChanged += (s, e) => {
                 if (isUpdatingUI) return;
                 SetAutoStartShowUI(chkAutoStartShowUI.Checked, true);
@@ -930,8 +914,7 @@ namespace RazerBatteryTray
             chkLowAlert = new ModernCheckBox();
             chkLowAlert.Text = "低电量提醒 (≤20%)";
             chkLowAlert.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-            chkLowAlert.Location = new Point(cPad, chkY2);
-            chkLowAlert.Size = new Size(chkW, chkH);
+            chkLowAlert.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             chkLowAlert.CheckedChanged += (s, e) => {
                 if (isUpdatingUI) return;
                 SetLowBatteryAlert(chkLowAlert.Checked);
@@ -941,8 +924,7 @@ namespace RazerBatteryTray
             chkBatteryFloat = new ModernCheckBox();
             chkBatteryFloat.Text = "电量悬浮图标";
             chkBatteryFloat.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-            chkBatteryFloat.Location = new Point(cPad + chkW + chkGap, chkY2);
-            chkBatteryFloat.Size = new Size(chkW, chkH);
+            chkBatteryFloat.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             chkBatteryFloat.Checked = batteryFloatEnabled;
             chkBatteryFloat.CheckedChanged += (s, e) => {
                 if (isUpdatingUI) return;
@@ -956,12 +938,14 @@ namespace RazerBatteryTray
             lblSettingsTip.Font = new Font("Microsoft YaHei UI", 8.2F, FontStyle.Regular, GraphicsUnit.Point);
             lblSettingsTip.ForeColor = Color.FromArgb(120, 128, 142);
             lblSettingsTip.BackColor = Color.Transparent;
-            lblSettingsTip.Location = new Point(cPad, (int)(176 * dpiScale));
-            lblSettingsTip.AutoSize = true;
+            lblSettingsTip.AutoSize = false;
+            lblSettingsTip.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             cardSettings.Controls.Add(lblSettingsTip);
 
+            LayoutSettingsCard();
+
             // ================= BOTTOM ROW: ACTIONS =================
-            int card4Y = card3Y + card3H + (int)(14 * dpiScale);
+            int card4Y = cardSettings.Bottom + (int)(14 * dpiScale);
             int btnH = (int)(38 * dpiScale);
             int btnGap = (int)(14 * dpiScale);
             int btnW = (cardW - btnGap) / 2;
@@ -1134,10 +1118,83 @@ namespace RazerBatteryTray
             }
         }
 
+        private void LayoutSettingsCard()
+        {
+            if (cardSettings == null || lblIntervalTitle == null || btnInt30s == null) return;
+
+            int cPad = (int)(18 * dpiScale);
+            int innerW = cardSettings.Width - (cPad * 2);
+            if (innerW < (int)(200 * dpiScale)) innerW = (int)(200 * dpiScale);
+
+            int labelY = (int)(40 * dpiScale);
+            int labelH = (int)(22 * dpiScale);
+            int btnY = labelY + labelH + (int)(12 * dpiScale);
+            int btnH = (int)(28 * dpiScale);
+            int gap = (int)(8 * dpiScale);
+            int btnW = (innerW - (gap * 3)) / 4;
+
+            int divY = btnY + btnH + (int)(10 * dpiScale);
+            int chkY1 = divY + (int)(14 * dpiScale);
+            int chkY2 = chkY1 + (int)(30 * dpiScale);
+            int chkGap = (int)(14 * dpiScale);
+            int chkW = (innerW - chkGap) / 2;
+            int chkH = (int)(24 * dpiScale);
+            int tipY = chkY2 + chkH + (int)(8 * dpiScale);
+            int tipH = (int)(32 * dpiScale);
+
+            cardSettings.Height = tipY + tipH + (int)(12 * dpiScale);
+
+            if (lblSettingsTitle != null)
+            {
+                lblSettingsTitle.Location = new Point(cPad, (int)(14 * dpiScale));
+            }
+
+            lblIntervalTitle.Location = new Point(cPad, labelY);
+            lblIntervalTitle.Size = new Size(innerW, labelH);
+
+            ModernSegmentButton[] buttons = new ModernSegmentButton[] { btnInt30s, btnInt1m, btnInt5m, btnInt10m };
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                if (buttons[i] == null) continue;
+                buttons[i].Location = new Point(cPad + (i * (btnW + gap)), btnY);
+                buttons[i].Size = new Size(btnW, btnH);
+            }
+
+            if (divSettings != null)
+            {
+                divSettings.Location = new Point(cPad, divY);
+                divSettings.Size = new Size(innerW, (int)(8 * dpiScale));
+            }
+            if (chkAutoStart != null) chkAutoStart.SetBounds(cPad, chkY1, chkW, chkH);
+            if (chkAutoStartShowUI != null) chkAutoStartShowUI.SetBounds(cPad + chkW + chkGap, chkY1, chkW, chkH);
+            if (chkLowAlert != null) chkLowAlert.SetBounds(cPad, chkY2, chkW, chkH);
+            if (chkBatteryFloat != null) chkBatteryFloat.SetBounds(cPad + chkW + chkGap, chkY2, chkW, chkH);
+            if (lblSettingsTip != null)
+            {
+                lblSettingsTip.Location = new Point(cPad, tipY);
+                lblSettingsTip.Size = new Size(innerW, tipH);
+            }
+        }
+
         private void AdjustPerformanceCardHeight(int newCard2H)
         {
             if (cardPerformance == null || cardSettings == null || btnRefresh == null || btnHideToTray == null) return;
-            if (cardPerformance.Height == newCard2H) return;
+
+            LayoutSettingsCard();
+
+            int padX = (int)(18 * dpiScale);
+            int baseW = (int)(470 * dpiScale);
+            int cardW = baseW - (padX * 2);
+            int card3Y = cardPerformance.Top + newCard2H + (int)(12 * dpiScale);
+            int card4Y = card3Y + cardSettings.Height + (int)(14 * dpiScale);
+            int btnH = (int)(38 * dpiScale);
+            int btnGap = (int)(14 * dpiScale);
+            int btnW = (cardW - btnGap) / 2;
+            int clientH = card4Y + btnH + (int)(16 * dpiScale);
+            if (cardPerformance.Height == newCard2H && cardSettings.Top == card3Y && btnRefresh.Top == card4Y && this.ClientSize.Height == clientH)
+            {
+                return;
+            }
 
             int oldCard3Y = cardSettings.Top;
             int oldBtnBottom = btnRefresh.Bottom;
@@ -1146,28 +1203,19 @@ namespace RazerBatteryTray
             try
             {
                 cardPerformance.Height = newCard2H;
-                int padX = (int)(18 * dpiScale);
-                int baseW = (int)(470 * dpiScale);
-                int cardW = baseW - (padX * 2);
-
-                int card3Y = cardPerformance.Bottom + (int)(12 * dpiScale);
                 cardSettings.Location = new Point(padX, card3Y);
-
-                int card4Y = cardSettings.Bottom + (int)(14 * dpiScale);
-                int btnH = (int)(38 * dpiScale);
-                int btnGap = (int)(14 * dpiScale);
-                int btnW = (cardW - btnGap) / 2;
-
                 btnRefresh.Location = new Point(padX, card4Y);
+                btnRefresh.Size = new Size(btnW, btnH);
                 btnHideToTray.Location = new Point(padX + btnW + btnGap, card4Y);
-
-                int clientH = card4Y + btnH + (int)(16 * dpiScale);
+                btnHideToTray.Size = new Size(btnW, btnH);
                 this.ClientSize = new Size(baseW, clientH);
             }
             finally
             {
                 this.ResumeLayout(false);
             }
+
+            LayoutSettingsCard();
 
             int minY = Math.Min(oldCard3Y, cardSettings.Top);
             int maxY = Math.Max(oldBtnBottom, btnRefresh.Bottom);
