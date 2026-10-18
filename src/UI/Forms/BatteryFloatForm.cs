@@ -2,7 +2,7 @@
 // 模块名称: BatteryFloatForm.cs
 // 所属区域: UI/Forms (业务对话框层)
 // 核心职责:
-//   常驻电量悬浮小窗。拖到屏幕边缘会贴边并收成细电量条；鼠标移入列出全部设备；闲置时轮流切换当前设备电量。不抢前台焦点。
+//   常驻电量悬浮小窗。拖到屏幕边缘会贴边并收成细电量条；闲置时只轮流展示在线设备电量；鼠标移入才列出全部设备。不抢前台焦点。
 // 依赖关系: Controls.RoundedCard, Models.MouseBatteryInfo
 //
 // ⚠️ AI 维护准则 (AI MAINTENANCE DIRECTIVE - DO NOT REMOVE) ⚠️:
@@ -134,7 +134,7 @@ namespace RazerBatteryTray
                 list.Add(DisconnectedDevice());
             }
             devices = list.ToArray();
-            if (cycleIndex >= devices.Length) cycleIndex = 0;
+            if (cycleIndex >= ConnectedCount()) cycleIndex = 0;
             if (hovering && !dragging)
             {
                 Present();
@@ -307,9 +307,10 @@ namespace RazerBatteryTray
         private void OnCycleTick(object sender, EventArgs e)
         {
             if (hovering || dragging) return;
-            if (devices == null || devices.Length < 2) return;
+            int online = ConnectedCount();
+            if (online < 2) return;
             cycleIndex++;
-            if (cycleIndex >= devices.Length) cycleIndex = 0;
+            if (cycleIndex >= online) cycleIndex = 0;
             this.Invalidate();
         }
 
@@ -543,6 +544,7 @@ namespace RazerBatteryTray
             int pad = (int)(8 * dpiScale);
             int rowH = RowHeight();
             int count = devices == null ? 0 : devices.Length;
+            FloatDevice current = CurrentDevice();
             using (Font nameFont = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular, GraphicsUnit.Point))
             using (Font pctFont = new Font("Microsoft YaHei UI", 10f, FontStyle.Bold, GraphicsUnit.Point))
             using (Font stFont = new Font("Microsoft YaHei UI", 8f, FontStyle.Regular, GraphicsUnit.Point))
@@ -557,7 +559,7 @@ namespace RazerBatteryTray
                 {
                     FloatDevice dev = devices[i];
                     int y = pad + i * rowH;
-                    if (i == cycleIndex)
+                    if (object.ReferenceEquals(dev, current))
                     {
                         using (SolidBrush hi = new SolidBrush(Color.FromArgb(32, 38, 50)))
                         {
@@ -585,11 +587,38 @@ namespace RazerBatteryTray
             }
         }
 
+        private int ConnectedCount()
+        {
+            if (devices == null) return 0;
+            int n = 0;
+            for (int i = 0; i < devices.Length; i++)
+            {
+                if (devices[i] != null && devices[i].Connected) n++;
+            }
+            return n;
+        }
+
+        private FloatDevice ConnectedAt(int index)
+        {
+            if (devices == null || index < 0) return null;
+            int seen = 0;
+            for (int i = 0; i < devices.Length; i++)
+            {
+                if (devices[i] == null || !devices[i].Connected) continue;
+                if (seen == index) return devices[i];
+                seen++;
+            }
+            return null;
+        }
+
         private FloatDevice CurrentDevice()
         {
-            if (devices == null || devices.Length == 0) return DisconnectedDevice();
-            if (cycleIndex < 0 || cycleIndex >= devices.Length) return devices[0];
-            return devices[cycleIndex];
+            int online = ConnectedCount();
+            if (online <= 0) return DisconnectedDevice();
+            if (cycleIndex < 0 || cycleIndex >= online) cycleIndex = 0;
+            FloatDevice dev = ConnectedAt(cycleIndex);
+            if (dev == null) return DisconnectedDevice();
+            return dev;
         }
 
         private static FloatDevice Snapshot(MouseBatteryInfo info)
