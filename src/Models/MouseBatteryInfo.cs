@@ -2,7 +2,8 @@
 // 模块名称: MouseBatteryInfo.cs
 // 所属区域: Models (数据契约层)
 // 核心职责:
-//   全系统统一的归一化外设数据实体，包含连接状态、电池百分比、DPI、回报率与智能命名推导
+//   全系统统一的归一化外设数据实体，包含连接状态、电池百分比、DPI、回报率与智能命名推导。
+//   罗技 DPI 若是连续区间，DpiMin / DpiMax / DpiStep 给出滑块边界，DpiStages 留空。
 // 依赖关系: DeviceCategory.cs, RazerDeviceHelper.cs
 //
 // ⚠️ AI 维护准则 (AI MAINTENANCE DIRECTIVE - DO NOT REMOVE) ⚠️:
@@ -41,6 +42,9 @@ namespace RazerBatteryTray
         public int DpiStage { get; set; }
         public int DpiStageCount { get; set; }
         public int[] DpiStages { get; set; }
+        public int DpiMin { get; set; }
+        public int DpiMax { get; set; }
+        public int DpiStep { get; set; }
         public int PollingRate { get; set; }
         public int[] SupportedPollingRates { get; set; }
         public bool IsPrimary { get; set; }

@@ -1,4 +1,4 @@
-﻿# FerrisPulse · 灵脉 系统架构与 AI 维护全域指南 (ARCHITECTURE.md)
+# FerrisPulse · 灵脉 系统架构与 AI 维护全域指南 (ARCHITECTURE.md)
 
 本文档为 **FerrisPulse · 灵脉 (多品牌外设感知与电量管理系统)** 的全景架构地图与开发规范。
 所有参与维护、功能扩展或 Bug 修复的工程师与 AI Agent，**必须严格遵循本文档定义的目录拓扑与行为准则**。
@@ -63,7 +63,7 @@ D:\FerrisPulse · 灵脉\
         │   ├── SubtleDivider.cs          [细腻冷灰分割线]
         │   ├── ModernProgressBar.cs      [抗锯齿进度条]
         │   ├── StatusPill.cs             [胶囊状态标签]
-        │   ├── TactileSmoothSliderControl.cs [平滑阻尼滑块]
+        │   ├── TactileSmoothSliderControl.cs [平滑滑块：可按倍数展开，并带可点击刻度]
         │   ├── RapooStatusTile.cs        [雷柏状态小瓦片]
         │   ├── AnimatedContextMenuStrip.cs
         │   ├── ModernDarkDropdown.cs
@@ -85,6 +85,7 @@ D:\FerrisPulse · 灵脉\
             ├── MainForm.Events.cs        [WndProc 消息泵与 TaskbarCreated 重建机制]
             ├── ModernDeviceSwitcherFlyout.cs [悬浮式现代外设快速切换器]
             ├── DpiOsdForm.cs             [零焦点置顶无感 DPI 悬浮提示窗]
+            ├── BatteryFloatForm.cs       [电量悬浮小窗：贴边细条、悬停设备列表、闲置轮播]
             ├── KeyRolloverSpeedForm.cs   [全键无冲与触发测速仪]
             ├── MouseRateTestDialog.cs    [回报率平滑度离线测试工具]
             ├── GameProcessManagerForm.cs [电竞游戏守护进程管理弹窗]

@@ -1,4 +1,4 @@
-﻿// ⚠️ AI 维护准则 (AI MAINTENANCE DIRECTIVE - DO NOT REMOVE) ⚠️
+// ⚠️ AI 维护准则 (AI MAINTENANCE DIRECTIVE - DO NOT REMOVE) ⚠️
 // 1. 目标平台与编译规范：严格维持 C# 5.0 语法标准与 .NET Framework 4.0 兼容性。严禁引入任何第三方包或依赖。
 // 2. 编码规范：所有文件严格保存为 UTF-8 带签名（BOM）格式，防止中文字符乱码。
 // 3. 架构规范：本文件属于 MainForm 的分部类 (partial class) 之一。修改时请保持职责清晰，任何新增方法或逻辑请同步维护 ARCHITECTURE.md。
@@ -42,18 +42,16 @@ namespace RazerBatteryTray
             {
                 try
                 {
-                    // 1. 若用户未开启 DPI OSD 提示，彻底不轮询硬件，零开销零占用
-                    if (!dpiOsdEnabled)
-                    {
-                        Thread.Sleep(800);
-                        continue;
-                    }
-
-                    // 2. 收集当前需要监听 DPI 的雷蛇鼠标设备（仅针对鼠标类别，杜绝键盘等其他外设误入）
+                    // 只监听当前确实在线的雷蛇 / 雷柏鼠标。没有这两家设备时不做 HID 枚举。
                     List<string> rzTargets = new List<string>();
-                    if (selectedDevice != null && selectedDevice.Brand == "Razer" && selectedDevice.Category == DeviceCategory.Mouse)
+                    bool watchRapoo = false;
+                    if (selectedDevice != null && selectedDevice.Brand == "Razer" && selectedDevice.Category == DeviceCategory.Mouse && selectedDevice.IsConnected && !selectedDevice.IsSleeping)
                     {
                         rzTargets.Add(selectedDevice.DeviceId);
+                    }
+                    if (selectedDevice != null && selectedDevice.Brand == "Rapoo" && selectedDevice.Category == DeviceCategory.Mouse && selectedDevice.IsConnected && !selectedDevice.IsSleeping)
+                    {
+                        watchRapoo = true;
                     }
                     if (activeDevices != null)
                     {
@@ -64,11 +62,16 @@ namespace RazerBatteryTray
                             {
                                 if (!rzTargets.Contains(d.DeviceId)) rzTargets.Add(d.DeviceId);
                             }
+                            if (d != null && d.Brand == "Rapoo" && d.Category == DeviceCategory.Mouse && d.IsConnected && !d.IsSleeping)
+                            {
+                                watchRapoo = true;
+                            }
                         }
                     }
-                    if (rzTargets.Count == 0 && (selectedDevice == null || selectedDevice.Category == DeviceCategory.Mouse))
+                    if (rzTargets.Count == 0 && !watchRapoo)
                     {
-                        rzTargets.Add(null); // 回退至默认主鼠标设备
+                        Thread.Sleep(800);
+                        continue;
                     }
 
                     for (int rIdx = 0; rIdx < rzTargets.Count; rIdx++)
@@ -142,7 +145,7 @@ namespace RazerBatteryTray
 
                     // 3. 雷柏设备极速 DPI 监听
                     int rDpi, rStage, rCount;
-                    if (RapooDeviceHelper.FastQueryDpi(out rDpi, out rStage, out rCount))
+                    if (watchRapoo && RapooDeviceHelper.FastQueryDpi(out rDpi, out rStage, out rCount))
                     {
                         int validRCount = rCount > 0 ? rCount : 5;
                         if (rDpi >= 100 && rDpi <= 40000 && rStage >= 1 && rStage <= validRCount)
@@ -190,11 +193,6 @@ namespace RazerBatteryTray
 
         private void OnDpiChanged(string brand, int newDpi, int newStage, int stageCount, string deviceId = null)
         {
-            if (dpiOsdEnabled && osdForm != null)
-            {
-                osdForm.ShowDpi(newDpi, newStage, stageCount, brand);
-            }
-
             if (activeDevices != null)
             {
                 MouseBatteryInfo matched = null;
@@ -320,6 +318,21 @@ namespace RazerBatteryTray
                         OnDpiChanged("Rapoo", dpi, targetStage > 0 ? targetStage : 1, dpiStageValues.Length);
                     }));
                 }
+                else if (curDev != null && (curDev.Brand == "Logitech" || curDev.Brand == "罗技"))
+                {
+                    bool ok = LogitechDeviceHelper.TrySetDpi(dpi);
+                    if (!ok) return;
+                    int applied = LogitechDeviceHelper.CachedDpi > 0 ? LogitechDeviceHelper.CachedDpi : dpi;
+                    this.BeginInvoke(new Action(() => {
+                        if (curDev != null)
+                        {
+                            curDev.Dpi = applied;
+                            if (targetStage > 0 && applied == dpi) curDev.DpiStage = targetStage;
+                        }
+                        OnDpiChanged("Logitech", applied, (applied == dpi && targetStage > 0) ? targetStage : 0, dpiStageValues.Length, curDev != null ? curDev.DeviceId : null);
+                        ShowDeviceMeta(curDev);
+                    }));
+                }
                 else
                 {
                     string rzDevId = curDev != null ? curDev.DeviceId : null;
@@ -373,6 +386,10 @@ namespace RazerBatteryTray
                     {
                         ok = RapooDeviceHelper.SetRapooPollingRate(hz);
                     }
+                    else if (curDev != null && (curDev.Brand == "Logitech" || curDev.Brand == "罗技"))
+                    {
+                        ok = LogitechDeviceHelper.TrySetReportRate(hz);
+                    }
                     else
                     {
                         ok = RazerDeviceHelper.SetRazerPollingRate(hz, curDev != null ? curDev.DeviceId : null);
@@ -392,6 +409,7 @@ namespace RazerBatteryTray
                         UpdateDesktopRateButtonSelection(hz);
                         UpdatePollingRateDisplayStates();
                         UpdateStatusDisplay();
+                        ShowDeviceMeta(lastInfo);
                     }));
                 }
             }) { IsBackground = true }.Start();
@@ -896,7 +914,8 @@ namespace RazerBatteryTray
                 bootPollTimer.Tick += (s, e) =>
                 {
                     bootPollCount++;
-                    if (lastInfo == null || lastInfo.IsSleeping || !lastInfo.IsConnected || lastInfo.BatteryPercent <= 0)
+                    bool needBootRetry = lastInfo == null || !lastInfo.IsConnected || lastInfo.IsSleeping;
+                    if (needBootRetry)
                     {
                         ThreadPool.QueueUserWorkItem(_ =>
                         {
@@ -907,7 +926,7 @@ namespace RazerBatteryTray
                             catch { }
                         });
                     }
-                    if (bootPollCount >= 8 || (lastInfo != null && lastInfo.IsConnected && !lastInfo.IsSleeping && lastInfo.BatteryPercent > 0))
+                    if (bootPollCount >= 8 || !needBootRetry)
                     {
                         bootPollTimer.Stop();
                     }
@@ -922,6 +941,25 @@ namespace RazerBatteryTray
         private void RefreshBatteryStatus(bool showTipIfManual)
         {
             if (PauseBackgroundRefresh) return;
+            bool start = false;
+            lock (batteryRefreshLock)
+            {
+                if (batteryRefreshRunning)
+                {
+                    batteryRefreshPending = true;
+                    if (showTipIfManual) batteryRefreshPendingTip = true;
+                }
+                else
+                {
+                    batteryRefreshRunning = true;
+                    start = true;
+                }
+            }
+            if (start) StartBatteryRefreshWorker(showTipIfManual);
+        }
+
+        private void StartBatteryRefreshWorker(bool showTipIfManual)
+        {
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 try
@@ -949,6 +987,26 @@ namespace RazerBatteryTray
                         }));
                     }
                     catch { }
+                }
+                finally
+                {
+                    bool again = false;
+                    bool tip = false;
+                    lock (batteryRefreshLock)
+                    {
+                        if (batteryRefreshPending)
+                        {
+                            batteryRefreshPending = false;
+                            tip = batteryRefreshPendingTip;
+                            batteryRefreshPendingTip = false;
+                            again = true;
+                        }
+                        else
+                        {
+                            batteryRefreshRunning = false;
+                        }
+                    }
+                    if (again) StartBatteryRefreshWorker(tip);
                 }
             });
         }
@@ -1284,6 +1342,11 @@ namespace RazerBatteryTray
             if (btnVolumeMixer != null) btnVolumeMixer.Visible = false;
             if (btnAudioSettings != null) btnAudioSettings.Visible = false;
             if (btnMouseRateTest != null) btnMouseRateTest.Visible = false;
+            if (sliderDpi != null) sliderDpi.Visible = false;
+            if (lblDpiRange != null) lblDpiRange.Visible = false;
+            if (lblDpiValue != null) lblDpiValue.Visible = false;
+            if (lblDpiTitle != null) lblDpiTitle.Size = new Size((int)(86 * dpiScale), (int)(22 * dpiScale));
+            PlaceRateRow((int)(76 * dpiScale), 4);
 
             bool isGamepad = (info.Category == DeviceCategory.Gamepad);
             bool isHeadset = (info.Category == DeviceCategory.Headset || info.Category == DeviceCategory.Earbuds);
@@ -1733,52 +1796,135 @@ namespace RazerBatteryTray
 
             else if (isLogitech)
             {
-                AdjustPerformanceCardHeight((int)(160 * dpiScale));
-                if (lblPerfTitle != null) lblPerfTitle.Text = "罗技鼠标状态与性能测速";
-
-                // Hide Razer interactive controls
-                if (lblDpiTitle != null) lblDpiTitle.Visible = false;
+                AdjustPerformanceCardHeight((int)(208 * dpiScale));
+                if (lblPerfTitle != null) lblPerfTitle.Text = "鼠标功能配置";
+                if (tileRapooDpi != null) tileRapooDpi.Visible = false;
                 if (btnDpiManage != null) btnDpiManage.Visible = false;
+                if (lblRateTitle != null)
+                {
+                    lblRateTitle.Visible = true;
+                    lblRateTitle.Text = "回报率";
+                }
+
+                int dpiMin = info.DpiMin > 0 ? info.DpiMin : 100;
+                int dpiMax = info.DpiMax > dpiMin ? info.DpiMax : 16000;
+                int dpiStep = info.DpiStep > 0 ? info.DpiStep : 50;
+                bool dpiRange = info.DpiStages == null || info.DpiStages.Length == 0 || info.DpiStages.Length > 5;
                 if (btnDpiStages != null)
                 {
                     for (int i = 0; i < btnDpiStages.Length; i++)
                     {
-                        if (btnDpiStages[i] != null) btnDpiStages[i].Visible = false;
+                        if (btnDpiStages[i] != null) btnDpiStages[i].Visible = !dpiRange;
                     }
                 }
-                if (lblRateTitle != null) lblRateTitle.Visible = false;
+
+                int cPad = (int)(18 * dpiScale);
+                int labelY = (int)(36 * dpiScale);
+                if (lblDpiTitle != null)
+                {
+                    lblDpiTitle.Visible = true;
+                    lblDpiTitle.Text = "DPI";
+                    lblDpiTitle.Size = new Size((int)(34 * dpiScale), (int)(22 * dpiScale));
+                    lblDpiTitle.Location = new Point(cPad, labelY);
+                }
+                if (lblDpiRange != null)
+                {
+                    lblDpiRange.Visible = dpiRange;
+                    lblDpiRange.Text = string.Format("{0} – {1}    步进 {2}", dpiMin, dpiMax, dpiStep);
+                    lblDpiRange.Location = new Point(cPad + (int)(36 * dpiScale), labelY + (int)(1 * dpiScale));
+                    lblDpiRange.BringToFront();
+                }
+                if (lblDpiValue != null)
+                {
+                    lblDpiValue.Visible = true;
+                    lblDpiValue.ForeColor = brandAccent;
+                    lblDpiValue.Text = info.Dpi > 0 ? info.Dpi.ToString() : "--";
+                    lblDpiValue.SetBounds(cardPerformance.ClientSize.Width - cPad - (int)(72 * dpiScale), labelY, (int)(72 * dpiScale), (int)(22 * dpiScale));
+                }
+                if (sliderDpi != null)
+                {
+                    sliderDpi.Visible = dpiRange;
+                    sliderDpi.Minimum = dpiMin;
+                    sliderDpi.Maximum = dpiMax;
+                    sliderDpi.Step = dpiStep;
+                    sliderDpi.WheelStep = dpiStep;
+                    sliderDpi.Logarithmic = true;
+                    int[] commonDpi = new int[] { 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600 };
+                    List<int> presetList = new List<int>();
+                    for (int p = 0; p < commonDpi.Length; p++)
+                    {
+                        int mark = commonDpi[p];
+                        if (mark < dpiMin || mark > dpiMax) continue;
+                        if (dpiStep > 1 && ((mark - dpiMin) % dpiStep) != 0) continue;
+                        presetList.Add(mark);
+                    }
+                    if (dpiMax >= dpiMin && !presetList.Contains(dpiMax))
+                    {
+                        if (dpiStep <= 1 || ((dpiMax - dpiMin) % dpiStep) == 0) presetList.Add(dpiMax);
+                    }
+                    sliderDpi.Presets = presetList.ToArray();
+                    if (!sliderDpi.IsDragging && info.Dpi > 0)
+                        sliderDpi.SetValueWithoutEvents(info.Dpi);
+                    sliderDpi.SetBounds((int)(8 * dpiScale), (int)(54 * dpiScale), secW + (int)(16 * dpiScale), (int)(52 * dpiScale));
+                    if (toolTipTop != null)
+                        toolTipTop.SetToolTip(sliderDpi, string.Format("按倍数滑动，{0} – {1}，步进 {2}。点刻度可直接跳到常用 DPI。", dpiMin, dpiMax, dpiStep));
+                }
+
+                if (info.SupportedPollingRates != null && info.SupportedPollingRates.Length > 0)
+                    pollingRateValues = info.SupportedPollingRates;
+                int rateCount = pollingRateValues == null ? 0 : pollingRateValues.Length;
+                if (rateCount > 4) rateCount = 4;
+                PlaceRateRow((int)(114 * dpiScale), rateCount > 0 ? rateCount : 1);
                 if (btnRates != null)
                 {
                     for (int i = 0; i < btnRates.Length; i++)
                     {
-                        if (btnRates[i] != null) btnRates[i].Visible = false;
+                        if (btnRates[i] == null) continue;
+                        if (i < rateCount)
+                        {
+                            btnRates[i].Visible = true;
+                            btnRates[i].Text = pollingRateValues[i] + " Hz";
+                            btnRates[i].AccentColor = brandAccent;
+                            btnRates[i].Selected = (pollingRateValues[i] == info.PollingRate);
+                        }
+                        else
+                        {
+                            btnRates[i].Visible = false;
+                        }
                     }
-                }
-
-                // Show Logitech Status Tile
-                if (tileRapooDpi != null)
-                {
-                    tileRapooDpi.Visible = true;
-                    tileRapooDpi.Size = new Size(secW, (int)(64 * dpiScale));
-                    tileRapooDpi.Location = new Point((int)(16 * dpiScale), (int)(36 * dpiScale));
-                    tileRapooDpi.AccentColor = brandAccent;
-                    tileRapooDpi.Title = "Lightspeed 无线与工作状态";
-                    tileRapooDpi.Badge = (info.Transport != null && info.Transport.Contains("蓝牙")) ? "BLE" : "Lightspeed";
-                    tileRapooDpi.ValueText = info.IsConnected ? (info.BatteryPercent >= 0 ? info.BatteryPercent.ToString() : "在线") : (info.IsDonglePresent ? "待机" : "离线");
-                    tileRapooDpi.UnitText = (info.IsConnected && info.BatteryPercent >= 0) ? "%" : "";
-                    string logiPower = info.IsCharging ? "正在充电 ⚡" : (info.BatteryPercent >= 0 ? string.Format("电池供电 ({0}%)", info.BatteryPercent) : "电池供电");
-                    tileRapooDpi.Footnote = string.Format("通道: {0} | 状态: {1} | 供电: {2}", info.Transport ?? "Lightspeed 无线", info.IsConnected ? "在线就绪" : (info.IsDonglePresent ? "闲置待机" : "已断开"), logiPower);
-                    tileRapooDpi.Invalidate();
                 }
 
                 if (btnMouseRateTest != null)
                 {
                     btnMouseRateTest.Visible = true;
-                    btnMouseRateTest.SetBounds((int)(16 * dpiScale), (int)(110 * dpiScale), secW, (int)(34 * dpiScale));
+                    btnMouseRateTest.SetBounds((int)(16 * dpiScale), (int)(154 * dpiScale), secW, (int)(34 * dpiScale));
                 }
 
-                if (dpiMenu != null) dpiMenu.Visible = false;
-                if (rateMenu != null) rateMenu.Visible = false;
+                if (dpiMenu != null)
+                {
+                    dpiMenu.Visible = true;
+                    dpiMenu.Text = "DPI (&D)";
+                    dpiMenu.DropDownItems.Clear();
+                    string dpiLine = info.Dpi > 0
+                        ? string.Format("当前 {0} DPI    范围 {1}–{2}", info.Dpi, dpiMin, dpiMax)
+                        : string.Format("范围 {0}–{1}，步进 {2}", dpiMin, dpiMax, dpiStep);
+                    var curItem = new ToolStripMenuItem(dpiLine);
+                    curItem.Enabled = false;
+                    dpiMenu.DropDownItems.Add(curItem);
+                }
+                if (rateMenu != null)
+                {
+                    rateMenu.Visible = true;
+                    rateMenu.DropDownItems.Clear();
+                    for (int i = 0; i < pollingRateValues.Length; i++)
+                    {
+                        int hz = pollingRateValues[i];
+                        var sub = new ToolStripMenuItem(hz + " Hz", null, (s, e) => SetPollingRateFromUI(hz));
+                        sub.Tag = hz;
+                        sub.Checked = (info.PollingRate == hz);
+                        rateMenu.DropDownItems.Add(sub);
+                    }
+                }
             }
             else if (isRazer)
             {
@@ -2002,6 +2148,19 @@ namespace RazerBatteryTray
             }
         }
 
+        private void ShowDeviceMeta(MouseBatteryInfo info)
+        {
+            if (lblDeviceMeta == null) return;
+            bool mouse = info != null && info.Category == DeviceCategory.Mouse;
+            lblDeviceMeta.Visible = mouse;
+            if (!mouse) return;
+            string dpiText = info.Dpi > 0 ? (info.Dpi.ToString() + " DPI") : "-- DPI";
+            string hzText = info.PollingRate > 0 ? (info.PollingRate.ToString() + " Hz") : "-- Hz";
+            string link = string.IsNullOrEmpty(info.Transport) ? "" : ("    ·    " + info.Transport);
+            lblDeviceMeta.Text = dpiText + "    ·    " + hzText + link;
+            lblDeviceMeta.ForeColor = info.BrandColor;
+        }
+
         private void UpdateUI(MouseBatteryInfo info, bool showTipIfManual)
         {
             if (info == null)
@@ -2012,6 +2171,7 @@ namespace RazerBatteryTray
                 if (badgePrimary != null) badgePrimary.Visible = false;
 
                 lblDeviceName.Text = "未检测到支持的无线设备";
+                ShowDeviceMeta(null);
 
                 lblBatteryBig.Text = "--%";
                 lblBatteryBig.ForeColor = Color.FromArgb(140, 145, 155);
@@ -2030,6 +2190,7 @@ namespace RazerBatteryTray
                 {
                     SafeShowBalloonTip(2000, "设备未连接", "未能找到已连接或唤醒的外设设备，请检查开关或蓝牙连接。", ToolTipIcon.Warning);
                 }
+                SyncBatteryFloat(info);
                 return;
             }
 
@@ -2041,6 +2202,7 @@ namespace RazerBatteryTray
             {
                 isMouseSleeping = false;
                 lblDeviceName.Text = info.DisplayName;
+                ShowDeviceMeta(info);
 
                 string battDisplay = (info.BatteryPercent > 0 ? info.BatteryPercent.ToString() : "--") + "%";
                 lblBatteryBig.Text = battDisplay;
@@ -2069,6 +2231,7 @@ namespace RazerBatteryTray
                 if (updateTimer != null) updateTimer.Interval = userSelectedInterval;
 
                 lblDeviceName.Text = info.DisplayName;
+                ShowDeviceMeta(info);
 
                 bool isPureWired = (info.Transport != null && 
                                    (info.Transport.IndexOf("有线", StringComparison.OrdinalIgnoreCase) >= 0 || info.Transport.IndexOf("USB", StringComparison.OrdinalIgnoreCase) >= 0) &&
@@ -2160,10 +2323,12 @@ namespace RazerBatteryTray
                     UpdateStatusDisplay();
                     UpdateTrayIcon(info.BatteryPercent, kbCharging, true, false, brandAccent);
                 }
+                SyncBatteryFloat(info);
                 return;
             }
 
-            // Connected mouse with zero/unknown battery (indicates sleep or no battery telemetry)
+            // 电量暂时读不到不等于休眠。只有协议明确报待机时才进休眠分支，
+            // 否则会把正在使用的鼠标标成休眠，RawInput 唤醒又会每 800ms 全量重扫。
             if (info.BatteryPercent <= 0 && info.Category == DeviceCategory.Mouse)
             {
                 int cached = -1;
@@ -2176,8 +2341,11 @@ namespace RazerBatteryTray
                     var st = RazerDeviceHelper.GetDeviceState(info.DeviceId);
                     cached = (st != null && st.BatteryPercent > 0) ? st.BatteryPercent : RazerDeviceHelper.CachedBatteryPercent;
                 }
-                info.BatteryPercent = cached > 0 ? cached : -1;
-                info.IsSleeping = true;
+                else if (info.Brand == "Logitech" || info.Brand == "罗技")
+                {
+                    cached = LogitechDeviceHelper.GetCachedBatteryForDevice(info.DeviceId);
+                }
+                if (cached > 0) info.BatteryPercent = cached;
             }
 
             if (info.IsSleeping)
@@ -2187,6 +2355,7 @@ namespace RazerBatteryTray
 
                 Color sleepColor = Color.FromArgb(255, 183, 77); // Warm amber
                 lblDeviceName.Text = info.DisplayName;
+                ShowDeviceMeta(info);
 
                 string battDisplay = (info.BatteryPercent > 0 ? (info.BatteryPercent.ToString() + "%") : "--");
 
@@ -2217,6 +2386,7 @@ namespace RazerBatteryTray
                     string restoreTip = (info.Category == DeviceCategory.Mouse) ? "\n移动鼠标将即刻恢复工作" : "";
                     SafeShowBalloonTip(1500, info.DisplayName, string.Format("电量: {0}% (休眠待机){1}", info.BatteryPercent, restoreTip), ToolTipIcon.Info);
                 }
+                SyncBatteryFloat(info);
                 return;
             }
 
@@ -2258,6 +2428,7 @@ namespace RazerBatteryTray
             }
 
             lblDeviceName.Text = info.DisplayName;
+            ShowDeviceMeta(info);
 
             lblBatteryBig.Font = new Font("Microsoft YaHei UI", 34F, FontStyle.Bold, GraphicsUnit.Point);
             string awakeBattDisplay = (info.BatteryPercent >= 0 ? info.BatteryPercent.ToString() : "--") + "%";
@@ -2315,6 +2486,7 @@ namespace RazerBatteryTray
                 string perfTip = (info.Dpi > 0 && info.PollingRate > 0) ? string.Format("\n性能: {0} DPI · {1} Hz", info.Dpi, info.PollingRate) : "";
                 SafeShowBalloonTip(1500, info.DisplayName, string.Format("电量: {0}% ({1}){2}\n更新时间: {3}", info.BatteryPercent, mouseConnPill, perfTip, normalTimeStr), ToolTipIcon.Info);
             }
+            SyncBatteryFloat(info);
         }
 
     }

@@ -4,6 +4,8 @@
 // 核心职责:
 //   现代化无级跟手滑块控件（用于亮度、音量或灵敏度调节），具备触觉视觉微光晕、
 //   DPI 缩放自适应、无级拖拽、滚轮步进调节以及刻度点视觉参考。
+//   Minimum / Maximum / Step 可改成任意区间；默认仍是 0–100，步进 1，滚轮步进 5。
+//   Logarithmic 为真时按倍数展开拖拽；Presets 在轨道上画出可点击的常用刻度。
 // 依赖关系: RoundedCard
 //
 // ⚠️ AI 维护准则 (AI MAINTENANCE DIRECTIVE - DO NOT REMOVE) ⚠️:
@@ -15,6 +17,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Windows.Forms;
 
 namespace RazerBatteryTray
@@ -23,6 +26,13 @@ namespace RazerBatteryTray
     {
         public float DpiScale = 1.0f;
         private int _value = 100;
+        private int _min = 0;
+        private int _max = 100;
+        private int _step = 1;
+        private int _wheelStep = 5;
+        private bool _logarithmic = false;
+        private int[] _presets = null;
+        private int _hoverPreset = -1;
         private bool _isDragging = false;
         private bool _isHovered = false;
         private readonly int[] ticks = new int[] { 0, 25, 50, 75, 100 };
@@ -30,12 +40,77 @@ namespace RazerBatteryTray
         public event EventHandler ValueChanged;
         public event EventHandler ValueCommitted;
 
+        public bool IsDragging
+        {
+            get { return _isDragging; }
+        }
+
+        public int Minimum
+        {
+            get { return _min; }
+            set
+            {
+                _min = value;
+                _value = Snap(_value);
+                Invalidate();
+            }
+        }
+
+        public int Maximum
+        {
+            get { return _max; }
+            set
+            {
+                _max = value;
+                _value = Snap(_value);
+                Invalidate();
+            }
+        }
+
+        public int Step
+        {
+            get { return _step; }
+            set
+            {
+                _step = value > 0 ? value : 1;
+                _value = Snap(_value);
+                Invalidate();
+            }
+        }
+
+        public int WheelStep
+        {
+            get { return _wheelStep; }
+            set { if (value > 0) _wheelStep = value; }
+        }
+
+        public bool Logarithmic
+        {
+            get { return _logarithmic; }
+            set
+            {
+                if (_logarithmic == value) return;
+                _logarithmic = value;
+                Invalidate();
+            }
+        }
+
+        public int[] Presets
+        {
+            get { return _presets; }
+            set
+            {
+                _presets = value;
+                Invalidate();
+            }
+        }
+
         public int Value
         {
             get { return _value; }
             set
             {
-                int clamped = Math.Max(0, Math.Min(100, value));
+                int clamped = Snap(value);
                 if (_value != clamped)
                 {
                     _value = clamped;
@@ -47,12 +122,32 @@ namespace RazerBatteryTray
 
         public void SetValueWithoutEvents(int val)
         {
-            int clamped = Math.Max(0, Math.Min(100, val));
+            int clamped = Snap(val);
             if (_value != clamped)
             {
                 _value = clamped;
                 Invalidate();
             }
+        }
+
+        private int Snap(int value)
+        {
+            if (_max < _min)
+            {
+                int swap = _min;
+                _min = _max;
+                _max = swap;
+            }
+            if (value < _min) value = _min;
+            if (value > _max) value = _max;
+            if (_step > 1)
+            {
+                int steps = (int)Math.Round((value - _min) / (double)_step);
+                value = _min + steps * _step;
+                if (value > _max) value = _max;
+                if (value < _min) value = _min;
+            }
+            return value;
         }
 
         public TactileSmoothSliderControl()
@@ -72,18 +167,31 @@ namespace RazerBatteryTray
         {
             base.OnMouseLeave(e);
             _isHovered = false;
-            Invalidate();
+            if (_hoverPreset != -1)
+            {
+                _hoverPreset = -1;
+                Invalidate();
+            }
+            else
+            {
+                Invalidate();
+            }
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            if (e.Button == MouseButtons.Left)
+            if (e.Button != MouseButtons.Left) return;
+            int preset = HitPreset(e.X, e.Y);
+            if (preset > 0)
             {
-                _isDragging = true;
-                Capture = true;
-                UpdateValueFromMouse(e.X);
+                Value = preset;
+                if (ValueCommitted != null) ValueCommitted(this, EventArgs.Empty);
+                return;
             }
+            _isDragging = true;
+            Capture = true;
+            UpdateValueFromMouse(e.X);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -92,6 +200,13 @@ namespace RazerBatteryTray
             if (_isDragging)
             {
                 UpdateValueFromMouse(e.X);
+                return;
+            }
+            int preset = HitPreset(e.X, e.Y);
+            if (preset != _hoverPreset)
+            {
+                _hoverPreset = preset;
+                Invalidate();
             }
         }
 
@@ -110,8 +225,8 @@ namespace RazerBatteryTray
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             base.OnMouseWheel(e);
-            int step = e.Delta > 0 ? 5 : -5;
-            Value = Math.Max(0, Math.Min(100, _value + step));
+            int step = e.Delta > 0 ? _wheelStep : -_wheelStep;
+            Value = _value + step;
             if (ValueCommitted != null) ValueCommitted(this, EventArgs.Empty);
         }
 
@@ -121,12 +236,81 @@ namespace RazerBatteryTray
             int trackW = Width - pad * 2;
             if (trackW <= 0) return;
 
-            float ratio = (float)(mouseX - pad) / trackW;
-            if (ratio < 0f) ratio = 0f;
-            if (ratio > 1f) ratio = 1f;
+            double ratio = (double)(mouseX - pad) / trackW;
+            if (ratio < 0d) ratio = 0d;
+            if (ratio > 1d) ratio = 1d;
+            Value = RatioToValue(ratio);
+        }
 
-            int targetVal = (int)Math.Round(ratio * 100);
-            Value = targetVal;
+        private bool HasPresets()
+        {
+            return _presets != null && _presets.Length > 0;
+        }
+
+        private void GetTrack(out int pad, out int trackY, out int trackH, out int trackW)
+        {
+            pad = (int)(10 * DpiScale);
+            trackH = Math.Max(4, (int)(6 * DpiScale));
+            trackW = Width - pad * 2;
+            if (trackW < 1) trackW = 1;
+            if (HasPresets()) trackY = (int)(7 * DpiScale);
+            else trackY = (Height - trackH) / 2;
+        }
+
+        private double ValueToRatio(int value)
+        {
+            if (value < _min) value = _min;
+            if (value > _max) value = _max;
+            if (_logarithmic && _min > 0 && _max > _min)
+            {
+                double span = Math.Log(_max) - Math.Log(_min);
+                if (span > 0d) return (Math.Log(value) - Math.Log(_min)) / span;
+            }
+            double linear = _max - _min;
+            if (linear < 1d) return 0d;
+            return (value - _min) / linear;
+        }
+
+        private int RatioToValue(double ratio)
+        {
+            if (ratio < 0d) ratio = 0d;
+            if (ratio > 1d) ratio = 1d;
+            int raw;
+            if (_logarithmic && _min > 0 && _max > _min)
+            {
+                double span = Math.Log(_max) - Math.Log(_min);
+                raw = (int)Math.Round(Math.Exp(Math.Log(_min) + ratio * span));
+            }
+            else
+            {
+                raw = _min + (int)Math.Round(ratio * (_max - _min));
+            }
+            return Snap(raw);
+        }
+
+        private int HitPreset(int x, int y)
+        {
+            if (!HasPresets()) return -1;
+            int pad, trackY, trackH, trackW;
+            GetTrack(out pad, out trackY, out trackH, out trackW);
+            int labelTop = trackY + trackH + (int)(4 * DpiScale);
+            if (y < labelTop) return -1;
+            int slop = (int)(18 * DpiScale);
+            int best = -1;
+            int bestDist = slop + 1;
+            for (int i = 0; i < _presets.Length; i++)
+            {
+                int preset = _presets[i];
+                if (preset < _min || preset > _max) continue;
+                int px = pad + (int)Math.Round(trackW * ValueToRatio(preset));
+                int dist = Math.Abs(x - px);
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    best = preset;
+                }
+            }
+            return best;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -138,10 +322,8 @@ namespace RazerBatteryTray
             Color parentBg = (Parent is RoundedCard) ? ((RoundedCard)Parent).CardColor : (Parent != null ? Parent.BackColor : Color.FromArgb(25, 27, 34));
             g.Clear(parentBg);
 
-            int pad = (int)(10 * DpiScale);
-            int trackH = (int)(6 * DpiScale);
-            int trackY = (Height - trackH) / 2;
-            int trackW = Width - pad * 2;
+            int pad, trackY, trackH, trackW;
+            GetTrack(out pad, out trackY, out trackH, out trackW);
 
             // 1. 轨道底槽 (暗调圆角)
             Rectangle trackRect = new Rectangle(pad, trackY, trackW, trackH);
@@ -152,7 +334,10 @@ namespace RazerBatteryTray
             }
 
             // 2. 激活进度高光渐变
-            int fillW = (int)(trackW * (_value / 100.0f));
+            double ratio = ValueToRatio(_value);
+            if (ratio < 0d) ratio = 0d;
+            if (ratio > 1d) ratio = 1d;
+            int fillW = (int)Math.Round(trackW * ratio);
             if (fillW > 0)
             {
                 Rectangle fillRect = new Rectangle(pad, trackY, fillW, trackH);
@@ -164,23 +349,29 @@ namespace RazerBatteryTray
                 }
             }
 
-            // 3. 刻度参考点 (0, 25, 50, 75, 100)
-            int dotD = Math.Max(2, (int)(3 * DpiScale));
-            for (int i = 0; i < ticks.Length; i++)
+            int trackMidY = trackY + trackH / 2;
+            if (HasPresets())
             {
-                int tx = pad + (int)(trackW * (ticks[i] / 100.0f));
-                int ty = trackY + trackH / 2;
-                bool isPast = _value >= ticks[i];
-                Color dotColor = isPast ? Color.FromArgb(200, 255, 255, 255) : Color.FromArgb(90, 80, 95, 120);
-                using (var db = new SolidBrush(dotColor))
+                PaintPresets(g, pad, trackW, trackMidY, ratio);
+            }
+            else
+            {
+                int dotD = Math.Max(2, (int)(3 * DpiScale));
+                for (int i = 0; i < ticks.Length; i++)
                 {
-                    g.FillEllipse(db, tx - dotD / 2, ty - dotD / 2, dotD, dotD);
+                    int tx = pad + (int)(trackW * (ticks[i] / 100.0f));
+                    bool isPast = ratio + 0.001d >= (ticks[i] / 100d);
+                    Color dotColor = isPast ? Color.FromArgb(200, 255, 255, 255) : Color.FromArgb(90, 80, 95, 120);
+                    using (var db = new SolidBrush(dotColor))
+                    {
+                        g.FillEllipse(db, tx - dotD / 2, trackMidY - dotD / 2, dotD, dotD);
+                    }
                 }
             }
 
             // 4. 拇指旋钮 (Thumb Knob)
             int thumbX = pad + fillW;
-            int thumbY = Height / 2;
+            int thumbY = trackMidY;
             int thumbR = (_isDragging || _isHovered) ? (int)(8 * DpiScale) : (int)(7 * DpiScale);
 
             // 旋钮外晕光
@@ -201,6 +392,44 @@ namespace RazerBatteryTray
             using (var coreBrush = new SolidBrush(Color.FromArgb(0, 190, 240)))
             {
                 g.FillEllipse(coreBrush, thumbX - coreR, thumbY - coreR, coreR * 2, coreR * 2);
+            }
+        }
+
+        private void PaintPresets(Graphics g, int pad, int trackW, int trackMidY, double ratio)
+        {
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            using (Font font = new Font("Microsoft YaHei UI", 7.5F, FontStyle.Regular, GraphicsUnit.Point))
+            using (Font fontOn = new Font("Microsoft YaHei UI", 7.5F, FontStyle.Bold, GraphicsUnit.Point))
+            {
+                int labelY = trackMidY + (int)(12 * DpiScale);
+                for (int i = 0; i < _presets.Length; i++)
+                {
+                    int preset = _presets[i];
+                    if (preset < _min || preset > _max) continue;
+                    double presetRatio = ValueToRatio(preset);
+                    int px = pad + (int)Math.Round(trackW * presetRatio);
+                    bool active = _value == preset;
+                    bool hover = _hoverPreset == preset;
+                    int dot = active || hover ? (int)(5 * DpiScale) : (int)(4 * DpiScale);
+                    if (dot < 3) dot = 3;
+                    Color dotColor = active ? Color.FromArgb(255, 255, 255) : (hover ? Color.FromArgb(190, 230, 255) : Color.FromArgb(150, 170, 190));
+                    using (SolidBrush db = new SolidBrush(dotColor))
+                    {
+                        g.FillEllipse(db, px - dot / 2, trackMidY - dot / 2, dot, dot);
+                    }
+
+                    string text = preset.ToString();
+                    Font useFont = active ? fontOn : font;
+                    SizeF size = g.MeasureString(text, useFont);
+                    float tx = px - size.Width / 2f;
+                    if (tx < 0f) tx = 0f;
+                    if (tx + size.Width > Width) tx = Width - size.Width;
+                    Color textColor = active ? Color.FromArgb(0, 220, 255) : Color.FromArgb(150, 160, 175);
+                    using (SolidBrush tb = new SolidBrush(textColor))
+                    {
+                        g.DrawString(text, useFont, tb, tx, labelY);
+                    }
+                }
             }
         }
     }
